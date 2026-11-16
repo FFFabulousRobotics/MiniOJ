@@ -6,63 +6,44 @@ from argparse import ArgumentParser
 from collections.abc import Sequence
 from pathlib import Path
 
-import requests
-
-from .config import ConfigurationError, load_exercise
-from .feedback import construct_feedback, construct_stage_feedback
-from .github import GitHubClient, GitHubError, get_repo
+from .feedback import construct_feedback
+from .judge import judge
 from .models import ExerciseId
-from .runner import run_exercise
 
 
 def build_parser() -> ArgumentParser:
-    parser = ArgumentParser(description="Judge a program based on the configuration.")
+    parser = ArgumentParser(
+        description="Run an exercise and write feedback Markdown to stdout."
+    )
     parser.add_argument("-c", "--config", help="The config path.", default=".minioj/")
-    parser.add_argument("-r", "--repo", help="The repo where the triggering PR lives.")
+    parser.add_argument(
+        "-o", "--output", type=Path,
+        help="Write feedback Markdown to this file instead of stdout.",
+    )
     parser.add_argument(
         "-x",
         "--comment",
         help="The PR comment body that triggers MiniOJ.",
         required=True,
     )
-    parser.add_argument(
-        "-i",
-        "--pull-request",
-        type=int,
-        help="The ID of the PR that triggers MiniOJ.",
-        required=True,
-    )
-    parser.add_argument(
-        "-t", "--token", help="The token for the PR feedback comment.", required=True
-    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    status = 0
     try:
-        client = GitHubClient(get_repo(args.repo), args.token)
         exercise_id = ExerciseId.from_comment(args.comment)
+        body = judge(Path(args.config), exercise_id)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        body = construct_feedback(("Unable to judge", str(error)))
+        status = 1
+    if args.output is None:
+        sys.stdout.write(body)
+    else:
         try:
-            exercise = load_exercise(Path(args.config), exercise_id)
-        except ConfigurationError as error:
-            body = construct_feedback(
-                (error.title, str(error)),
-                append_title=str(error.exercise) if error.exercise is not None else "",
-            )
-        else:
-            results = run_exercise(exercise)
-            body = construct_feedback(
-                *construct_stage_feedback(*results), append_title=exercise.name
-            )
-        client.send_comment(args.pull_request, body)
-    except (
-        OSError,
-        ValueError,
-        subprocess.SubprocessError,
-        requests.RequestException,
-        GitHubError,
-    ) as error:
-        print(f"MiniOJ: {error}", file=sys.stderr)
-        return 1
-    return 0
+            args.output.write_text(body, encoding="utf-8")
+        except OSError as error:
+            print(f"MiniOJ: cannot write feedback: {error}", file=sys.stderr)
+            return 1
+    return status

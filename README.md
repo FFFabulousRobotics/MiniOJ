@@ -1,21 +1,36 @@
 # MiniOJ
 
-MiniOJ reads an exercise configuration, runs its stages, and posts the captured
-exit statuses, stdout, and stderr to a GitHub pull request.
+MiniOJ reads an exercise configuration, runs its stages, and returns the captured
+exit statuses, stdout, and stderr as Markdown. It does not access GitHub or need
+a repository, PR number, or token.
 
 ## Install and run
 
-Python 3.10 or newer is required. From this checkout:
+Python 3.10 or newer is required. Install the PyPI release:
 
 ```sh
-python -m pip install -e .
-minioj --repo owner/repository --pull-request 123 \
-  --comment '@minioj-bot run w1/ex1' --token "$GITHUB_TOKEN"
+python -m pip install minioj==0.2.0
+minioj --config .minioj --comment '@minioj-bot run w1/ex1' --output feedback.md
 ```
 
+Omit `--output` to write the Markdown to stdout instead. `-o` is the short form.
+The output file is UTF-8; its parent directory must already exist. The same
+option saves configuration and execution error feedback. A file write error is
+reported on stderr and returns exit status 1.
+
 `python -m minioj` and `python main.py` accept the same arguments. `--config`
-defaults to `.minioj/`. When `--repo` is omitted, MiniOJ uses the first Git remote
-in the current working directory.
+defaults to `.minioj/`. For development, install this checkout with
+`python -m pip install -e .`.
+
+Exit status 0 means the run produced feedback, including feedback about failed
+cases or missing/invalid exercise configuration. An invalid triggering comment
+or an execution infrastructure error produces error Markdown and exit status 1.
+Argument syntax errors return status 2. Case verdicts appear in the Markdown;
+the CLI status is not an aggregate pass/fail result.
+
+Version 0.2 removes `--repo`, `--pull-request`, and `--token`. Publishing feedback
+belongs to the caller, for example a separate GitHub Actions job running
+`gh pr comment "$PR_NUMBER" --body-file feedback.md`.
 
 ## Exercise configuration
 
@@ -66,13 +81,34 @@ does not implement execution isolation or resource limits.
 | `minioj/config.py` | JSON loading, defaults, and configuration errors |
 | `minioj/runner.py` | Case discovery and subprocess execution |
 | `minioj/feedback.py` | Markdown feedback and unified output diffs |
-| `minioj/github.py` | Repository discovery and GitHub comments |
-| `minioj/cli.py` | Arguments and orchestration |
+| `minioj/judge.py` | Run one configured exercise and return Markdown |
+| `minioj/cli.py` | Arguments, stdout, and optional output file |
 
 The data models are immutable dataclasses. Config parsing produces `Exercise`
 and `Stage` objects; execution produces `StageResult` objects containing
 `CommandResult` objects. Feedback formatting consumes those results without
 performing network or process I/O.
+
+The Python API also returns Markdown:
+
+```python
+from pathlib import Path
+from minioj.judge import judge
+from minioj.models import ExerciseId
+
+markdown = judge(Path('.minioj'), ExerciseId(1, 1))
+```
+
+## Package for PyPI
+
+```sh
+python -m pip install build
+python -m build
+```
+
+This produces the wheel and source distribution in `dist/`. The package has no
+third-party runtime dependencies. Publish the 0.2.0 artifacts before enabling a
+consumer pinned to that version; building a wheel locally does not publish it.
 
 ## Tests
 
@@ -80,8 +116,8 @@ performing network or process I/O.
 python -m unittest discover -s tests -v
 ```
 
-Tests use temporary exercise directories and local subprocesses. GitHub requests
-are mocked; running the test suite does not publish comments.
+Tests use temporary exercise directories and local subprocesses. They cover
+stdout and file output, configuration errors, and offline use of the CLI.
 
 ## License
 

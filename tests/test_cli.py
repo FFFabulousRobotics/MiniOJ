@@ -9,8 +9,6 @@ from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-import requests
-
 from minioj.cli import main
 
 
@@ -20,12 +18,10 @@ class CliTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name) / ".minioj"
         self.args = [
-            "--repo", "owner/repo", "--pull-request", "42", "--token", "test-token",
             "--comment", "@minioj-bot run w1/ex2", "--config", str(self.root),
         ]
 
-    @patch("minioj.github.requests.post")
-    def test_real_config_execution_and_feedback_with_mocked_github(self, post):
+    def test_real_config_execution_emits_only_feedback_markdown(self):
         directory = self.root / "w1" / "ex2"
         directory.mkdir(parents=True)
         command = shlex.join([sys.executable, "-c", "import sys; print(sys.stdin.read().upper())"])
@@ -38,13 +34,10 @@ class CliTests(unittest.TestCase):
         (directory / "case1.in").write_text("first", encoding="utf-8")
         (directory / "case2.out").write_text("SECOND\n", encoding="utf-8")
         (directory / "case1.out").write_text("expected\n", encoding="utf-8")
-        response = requests.Response()
-        response.status_code = 201
-        post.return_value = response
-        with redirect_stdout(StringIO()):
+        with redirect_stdout(StringIO()) as output, redirect_stderr(StringIO()) as error:
             self.assertEqual(main(self.args), 0)
-        post.assert_called_once()
-        body = post.call_args.kwargs["json"]["body"]
+        body = output.getvalue()
+        self.assertEqual(error.getvalue(), "")
         self.assertTrue(body.startswith("## MiniOJ feedback - Integration"))
         self.assertIn("### Once", body)
         self.assertIn("### Cases", body)
@@ -56,38 +49,74 @@ class CliTests(unittest.TestCase):
         self.assertEqual(body.count("</details>\n\nPassed!\n\n"), 1)
         self.assertEqual(body.count("</details>\n\nFailed...\n\n"), 1)
 
-    @patch("minioj.cli.GitHubClient.send_comment")
-    def test_missing_root_posts_configuration_feedback(self, send):
-        self.assertEqual(main(self.args), 0)
-        send.assert_called_once()
-        pull_request, body = send.call_args.args
-        self.assertEqual(pull_request, 42)
+    def test_missing_root_emits_configuration_feedback(self):
+        with redirect_stdout(StringIO()) as output:
+            self.assertEqual(main(self.args), 0)
+        body = output.getvalue()
         self.assertTrue(body.startswith("## MiniOJ feedback\n"))
         self.assertIn("### OJ config not found", body)
 
-    @patch("minioj.cli.GitHubClient.send_comment")
-    def test_invalid_json_posts_exercise_config_feedback(self, send):
+    def test_invalid_json_emits_exercise_config_feedback(self):
         directory = self.root / "w1" / "ex2"
         directory.mkdir(parents=True)
         (directory / "conf.json").write_text("{", encoding="utf-8")
-        self.assertEqual(main(self.args), 0)
-        body = send.call_args.args[1]
+        with redirect_stdout(StringIO()) as output:
+            self.assertEqual(main(self.args), 0)
+        body = output.getvalue()
         self.assertTrue(body.startswith("## MiniOJ feedback - w1/ex2"))
         self.assertIn("### Exercise config error", body)
 
-    @patch("minioj.cli.GitHubClient.send_comment")
-    def test_invalid_comment_returns_failure_without_posting(self, send):
+    def test_invalid_comment_returns_failure_with_markdown(self):
         self.args[self.args.index("--comment") + 1] = "@minioj-bot help"
-        with redirect_stderr(StringIO()) as error:
+        with redirect_stdout(StringIO()) as output, redirect_stderr(StringIO()) as error:
             self.assertEqual(main(self.args), 1)
-        self.assertIn("No exercise found", error.getvalue())
-        send.assert_not_called()
+        self.assertIn("### Unable to judge", output.getvalue())
+        self.assertIn("No exercise found", output.getvalue())
+        self.assertEqual(error.getvalue(), "")
 
-    @patch("minioj.cli.GitHubClient.send_comment", side_effect=requests.Timeout("timed out"))
-    def test_network_failure_returns_nonzero(self, send):
-        with redirect_stderr(StringIO()) as error:
+    @patch("minioj.cli.judge", side_effect=OSError("command not found"))
+    def test_execution_failure_returns_nonzero_with_markdown(self, judge):
+        with redirect_stdout(StringIO()) as output:
             self.assertEqual(main(self.args), 1)
-        self.assertIn("timed out", error.getvalue())
+        self.assertIn("command not found", output.getvalue())
+
+    @patch("socket.socket", side_effect=AssertionError("network access is forbidden"))
+    def test_feedback_requires_neither_network_nor_git(self, socket):
+        with redirect_stdout(StringIO()) as output:
+            self.assertEqual(main(self.args), 0)
+        self.assertIn("OJ config not found", output.getvalue())
+        socket.assert_not_called()
+
+    def test_legacy_github_arguments_are_rejected(self):
+        with redirect_stderr(StringIO()):
+            with self.assertRaises(SystemExit) as error:
+                main(self.args + ["--token", "unused"])
+        self.assertEqual(error.exception.code, 2)
+
+    def test_output_file_contains_the_same_markdown_as_stdout(self):
+        output_file = self.root.parent / "feedback.md"
+        with redirect_stdout(StringIO()) as output:
+            self.assertEqual(main(self.args), 0)
+        expected = output.getvalue()
+        with redirect_stdout(StringIO()) as output:
+            self.assertEqual(main(self.args + ["--output", str(output_file)]), 0)
+        self.assertEqual(output.getvalue(), "")
+        self.assertEqual(output_file.read_text(encoding="utf-8"), expected)
+
+    def test_output_file_is_written_for_an_invalid_comment(self):
+        output_file = self.root.parent / "failure.md"
+        self.args[self.args.index("--comment") + 1] = "@minioj-bot help"
+        with redirect_stdout(StringIO()) as output:
+            self.assertEqual(main(self.args + ["-o", str(output_file)]), 1)
+        self.assertEqual(output.getvalue(), "")
+        self.assertIn("No exercise found", output_file.read_text(encoding="utf-8"))
+
+    def test_output_file_errors_are_reported_on_stderr(self):
+        output_file = self.root.parent / "missing" / "feedback.md"
+        with redirect_stdout(StringIO()) as output, redirect_stderr(StringIO()) as error:
+            self.assertEqual(main(self.args + ["--output", str(output_file)]), 1)
+        self.assertEqual(output.getvalue(), "")
+        self.assertIn("cannot write feedback", error.getvalue())
 
     def test_checkout_entry_points_accept_help(self):
         root = Path(__file__).resolve().parents[1]
@@ -97,5 +126,7 @@ class CliTests(unittest.TestCase):
                     [sys.executable, *arguments], cwd=root,
                     capture_output=True, text=True, check=True,
                 )
-                self.assertIn("--pull-request", result.stdout)
+                self.assertIn("--comment", result.stdout)
                 self.assertIn("--config", result.stdout)
+                self.assertIn("--output", result.stdout)
+                self.assertNotIn("--token", result.stdout)

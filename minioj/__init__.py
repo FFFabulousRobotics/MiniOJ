@@ -1,1 +1,1 @@
-"""MiniOJ: run configured exercise stages and report results on GitHub."""
+"""MiniOJ: run configured exercise stages and return Markdown feedback."""
