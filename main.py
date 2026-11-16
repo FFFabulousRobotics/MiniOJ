@@ -1,6 +1,7 @@
 import json
 import re
 import subprocess
+from typing import TypedDict
 
 import requests
 
@@ -84,13 +85,44 @@ def parse_ex(comment: str) -> tuple[int, int]:
     raise ExerciseNotFoundError()
 
 
-def construct_feedback(*sections: tuple[str, str]):
-    body = "## MiniOJ feedback\n\nMade with :heart: by FFFabulous 19726.\n\n"
+def construct_feedback(*sections: tuple[str, str], append_title: str = "") -> str:
+    body = "## MiniOJ feedback"
+    if append_title:
+        body += f" - {append_title}"
+    body += "\n\nMade with :heart: by FTC Team FFFabulous 19726.\n\n"
     for sec_title, sec_body in sections:
         body += f"### {sec_title}\n\n"
         body += sec_body
         body += "\n\n"
     return body
+
+
+class Stage(TypedDict):
+    name: str
+    command: str
+    result: subprocess.CompletedProcess[str] | list[subprocess.CompletedProcess[str]]
+
+
+def construct_result_feedback(result: subprocess.CompletedProcess[str]):
+    body = f"Status: {result.returncode}\n\n"
+    body += f"`stdout`:\n\n```\n{result.stdout}\n```\n\n"
+    body += f"`stderr`: \n\n```\n{result.stderr}\n```\n\n"
+    return body
+
+
+def construct_stage_feedback(ex_name: str, *stages: Stage) -> list[tuple[str, str]]:
+    sections = []
+    for stage in stages:
+        sec_title = stage["name"]
+        sec_body = ""
+        if isinstance(stage["result"], list):
+            for i, case in enumerate(stage["result"]):
+                sec_body += f"#### Case {i}:\n\n"
+                sec_body += construct_result_feedback(case)
+        else:
+            sec_body += construct_result_feedback(stage["result"])
+        sections.append((sec_title, sec_body))
+    return sections
 
 
 def main():
@@ -129,9 +161,9 @@ def main():
 
     from pathlib import Path
 
-    config_path = Path(args.config)
+    main_config_path = Path(args.config)
 
-    if not config_path.exists():
+    if not main_config_path.exists() or not main_config_path.is_dir():
         send_comment(
             repo,
             args.pull_request,
@@ -140,6 +172,118 @@ def main():
             ),
             args.token,
         )
+        return
+
+    week, ex = parse_ex(args.comment)
+
+    ex_config_path = main_config_path / f"w{week}" / f"ex{ex}"
+
+    if not ex_config_path.exists() or not ex_config_path.is_dir():
+        send_comment(
+            repo,
+            args.pull_request,
+            construct_feedback(
+                ("Exercise not found", "Check if you typed the right exercise."),
+                append_title=f"w{week}/ex{ex}",
+            ),
+            args.token,
+        )
+        return
+
+    ex_config_file = ex_config_path / "conf.json"
+
+    if not ex_config_file.exists() or not ex_config_file.is_file():
+        send_comment(
+            repo,
+            args.pull_request,
+            construct_feedback(
+                ("Exercise config not found", "Contact admins to setup OJ config."),
+                append_title=f"w{week}/ex{ex}",
+            ),
+            args.token,
+        )
+        return
+
+    with open(ex_config_file, mode="r") as ex_config_fp:
+        ex_config = json.load(ex_config_fp)
+
+    if (
+        type(ex_config) != dict
+        or "stages" not in ex_config
+        or type(ex_config["stages"]) != list
+    ):
+        send_comment(
+            repo,
+            args.pull_request,
+            construct_feedback(
+                ("Exercise config error", "Contact admins to setup OJ config."),
+                append_title=f"w{week}/ex{ex}",
+            ),
+            args.token,
+        )
+        return
+
+    ex_name = (
+        ex_config["name"]
+        if "name" in ex_config and type(ex_config["name"]) == str
+        else f"w{week}/ex{ex}"
+    )
+
+    ex_stages = ex_config["stages"]
+
+    stage_results = []
+
+    for stage_index, stage in enumerate(ex_stages):
+        if (
+            type(stage) != dict
+            or "command" not in stage
+            or type(stage["command"]) != str
+        ):
+            continue
+
+        stage_name = f"Stage {stage_index}"
+        if "name" in stage and type(stage["name"]) == str:
+            stage_name = stage["name"]
+
+        if "cased" in stage and type(stage["cased"]) == True:
+            raw_ex_case_in_files = ex_config_path.glob(
+                "case[0-9]*.in", case_sensitive=True
+            )
+            ex_case_in_files = []
+            for candidate_file in raw_ex_case_in_files:
+                if re.match(r"case[0-9]+\.in", candidate_file.name):
+                    ex_case_in_files.append(candidate_file)
+            case_results = []
+            for case_in in ex_case_in_files:
+                with open(case_in, mode="r") as case_in_fp:
+                    case_result = subprocess.run(
+                        stage["command"],
+                        stdin=case_in_fp,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    case_results.append(case_result)
+            stage_obj = Stage(
+                name=stage_name, command=stage["command"], result=case_results
+            )
+            stage_results.append(stage_obj)
+
+        else:
+            result = subprocess.run(
+                stage["command"],
+                stdin=True,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            stage_obj = Stage(name=stage_name, command=stage["command"], result=result)
+            stage_results.append(stage_obj)
+
+    stages_body = construct_stage_feedback(ex_name, *stage_results)
+    comment_body = construct_feedback(*stages_body, append_title=ex_name)
+
+    send_comment(repo, args.pull_request, comment_body, args.token)
 
 
 if __name__ == "__main__":
