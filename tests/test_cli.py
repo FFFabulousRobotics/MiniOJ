@@ -42,10 +42,10 @@ class CliTests(unittest.TestCase):
         self.assertIn("### Once", body)
         self.assertIn("### Cases", body)
         self.assertEqual(body.count("Status: 0"), 3)
-        self.assertIn("```diff\n--- case1.out\n+++ stdout\n@@ -1 +1 @@", body)
-        self.assertIn("-expected\n+FIRST\n", body)
+        self.assertIn("```diff\n-expected\n+FIRST\n", body)
         self.assertIn("**Case 1:**", body)
-        self.assertIn("```diff\nNo differences.\n```", body)
+        self.assertIn("```\nSECOND\n\n```", body)
+        self.assertNotIn("No differences.", body)
         self.assertEqual(body.count("</details>\n\nPassed!\n\n"), 1)
         self.assertEqual(body.count("</details>\n\nFailed...\n\n"), 1)
 

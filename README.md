@@ -9,7 +9,7 @@ a repository, PR number, or token.
 Python 3.10 or newer is required. Install the PyPI release:
 
 ```sh
-python -m pip install minioj==0.2.0
+python -m pip install minioj==0.3.0
 minioj --config .minioj --comment '@minioj-bot run w1/ex1' --output feedback.md
 ```
 
@@ -28,7 +28,7 @@ or an execution infrastructure error produces error Markdown and exit status 1.
 Argument syntax errors return status 2. Case verdicts appear in the Markdown;
 the CLI status is not an aggregate pass/fail result.
 
-Version 0.2 removes `--repo`, `--pull-request`, and `--token`. Publishing feedback
+MiniOJ does not accept `--repo`, `--pull-request`, or `--token`. Publishing feedback
 belongs to the caller, for example a separate GitHub Actions job running
 `gh pr comment "$PR_NUMBER" --body-file feedback.md`.
 
@@ -60,9 +60,12 @@ A stage normally runs once with closed standard input. A `cased` stage runs once
 for each `case<number>.in` file in the exercise directory, in numeric order. Each
 file supplies stdin, and its matching `case<number>.out` supplies expected stdout
 (for example, `case2.in` pairs with `case2.out`). Feedback numbers the cases from
-zero and shows a unified diff in each case's `stdout` block: `-` lines are expected
-output and `+` lines are actual output. Matching output displays `No differences.`
-Whitespace and trailing newlines matter. If the expected file is missing,
+zero and shows matching stdout as plain text. When output differs, the `stdout`
+block shows the complete output with diff highlighting: `-` lines are missing or
+replaced expected output, `+` lines are extra or replacement actual output, and
+unchanged lines appear once with a space prefix. No lines are omitted, and no
+filename or line-number headers are shown. Whitespace and trailing newlines
+matter. If the expected file is missing,
 feedback marks comparison as unavailable and shows the raw stdout instead.
 Process exit status and stderr are reported independently of the comparison.
 Each case ends with `Passed!` or `Failed...` outside its details block. Passing
@@ -80,7 +83,7 @@ does not implement execution isolation or resource limits.
 | `minioj/models.py` | Exercise IDs, exercise and stage definitions, command and stage results |
 | `minioj/config.py` | JSON loading, defaults, and configuration errors |
 | `minioj/runner.py` | Case discovery and subprocess execution |
-| `minioj/feedback.py` | Markdown feedback and unified output diffs |
+| `minioj/feedback.py` | Markdown feedback and full output diffs |
 | `minioj/judge.py` | Run one configured exercise and return Markdown |
 | `minioj/cli.py` | Arguments, stdout, and optional output file |
 
@@ -107,7 +110,7 @@ python -m build
 ```
 
 This produces the wheel and source distribution in `dist/`. The package has no
-third-party runtime dependencies. Publish the 0.2.0 artifacts before enabling a
+third-party runtime dependencies. Publish the 0.3.0 artifacts before enabling a
 consumer pinned to that version; building a wheel locally does not publish it.
 
 ## Tests

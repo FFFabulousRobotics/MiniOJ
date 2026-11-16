@@ -37,9 +37,8 @@ class FeedbackTests(unittest.TestCase):
         body = sections[0][1]
         self.assertIn("**Case 0:**\n\nStatus: 0", body)
         self.assertIn("**Case 1:**\n\nStatus: 2", body)
-        self.assertIn("```diff\n--- case1.out\n+++ stdout\n@@ -1 +1 @@", body)
-        self.assertIn("```diff\n--- case2.out\n+++ stdout\n@@ -1 +1 @@", body)
-        self.assertIn("-expected first\n+first\n", body)
+        self.assertIn("```diff\n-expected first\n+first\n", body)
+        self.assertIn("```diff\n-expected second\n+second\n", body)
         self.assertIn("`stderr`: \n\n```\nerror\n```", body)
         self.assertLess(body.index("first"), body.index("second"))
         cases = body.split("**Case ")[1:]
@@ -50,12 +49,14 @@ class FeedbackTests(unittest.TestCase):
             with self.subTest(case=case.splitlines()[0]):
                 self.assertTrue(case.endswith(f"</details>\n\n{verdict}\n\n"))
 
-    def test_matching_outputs_including_empty_output_show_no_differences(self):
-        for stdout in ("", "same\n"):
+    def test_matching_outputs_including_empty_output_show_plain_stdout(self):
+        for stdout in ("", "same\n", "same"):
             with self.subTest(stdout=stdout):
                 result = CommandResult(0, stdout, "", "case1.in", stdout)
                 body = construct_result_feedback(result)
-                self.assertIn("`stdout`:\n\n```diff\nNo differences.\n```", body)
+                self.assertIn(f"`stdout`:\n\n```\n{stdout}\n```", body)
+                self.assertNotIn("```diff", body)
+                self.assertNotIn("No differences.", body)
                 self.assertIs(result.output_matches, True)
 
     def test_missing_expected_output_is_explicit_and_retains_raw_stdout(self):
@@ -65,10 +66,9 @@ class FeedbackTests(unittest.TestCase):
         self.assertIn("```\nactual\n```", body)
         self.assertNotIn("No differences.", body)
 
-    def test_unified_diff_shows_context_whitespace_and_missing_newlines(self):
-        diff = construct_output_diff("before\nexpected\nafter\n", "before\nactual\nafter\n", "case1.out")
+    def test_diff_shows_context_whitespace_and_missing_newlines_without_headers(self):
+        diff = construct_output_diff("before\nexpected\nafter\n", "before\nactual\nafter\n")
         self.assertEqual(diff, (
-            "--- case1.out\n+++ stdout\n@@ -1,3 +1,3 @@\n"
             " before\n-expected\n+actual\n after\n"
         ))
         for expected, actual, tail in (
@@ -77,8 +77,40 @@ class FeedbackTests(unittest.TestCase):
             ("same \n", "same\n", "-same \n+same\n"),
         ):
             with self.subTest(expected=expected, actual=actual):
-                diff = construct_output_diff(expected, actual, "case1.out")
-                self.assertEqual(diff, "--- case1.out\n+++ stdout\n@@ -1 +1 @@\n" + tail)
+                diff = construct_output_diff(expected, actual)
+                self.assertEqual(diff, tail)
+
+    def test_missing_line_in_200_line_output_keeps_all_other_lines(self):
+        expected_lines = [f"line {number}\n" for number in range(1, 201)]
+        actual_lines = expected_lines[:150] + expected_lines[151:]
+        body = construct_result_feedback(CommandResult(
+            0, "".join(actual_lines), "", "case1.in", "".join(expected_lines),
+        ))
+        diff = body.split("```diff\n", 1)[1].split("\n```", 1)[0]
+        self.assertEqual(diff.splitlines(), [
+            ("-" if number == 151 else " ") + f"line {number}"
+            for number in range(1, 201)
+        ])
+
+    def test_distant_changes_keep_the_entire_output(self):
+        expected_lines = [f"line {number}\n" for number in range(1, 201)]
+        actual_lines = ["first\n", *expected_lines[1:-1], "last\n"]
+        diff = construct_output_diff("".join(expected_lines), "".join(actual_lines))
+        self.assertEqual(diff, (
+            "-line 1\n+first\n"
+            + "".join(" " + line for line in expected_lines[1:-1])
+            + "-line 200\n+last\n"
+        ))
+
+    def test_long_repeated_output_only_marks_the_missing_line(self):
+        actual = "repeat\n" * 200
+        expected = "repeat\n" * 150 + "missing\n" + "repeat\n" * 50
+        diff = construct_output_diff(expected, actual)
+        self.assertEqual(diff, " repeat\n" * 150 + "-missing\n" + " repeat\n" * 50)
+
+    def test_completely_missing_or_extra_output_shows_every_line(self):
+        self.assertEqual(construct_output_diff("first\nlast\n", ""), "-first\n-last\n")
+        self.assertEqual(construct_output_diff("", "first\nlast\n"), "+first\n+last\n")
 
     def test_empty_stages_and_error_feedback(self):
         self.assertEqual(construct_stage_feedback(), [])
