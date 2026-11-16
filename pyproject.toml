@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "minioj"
+version = "0.1.0"
+description = "Run configured exercise stages and report feedback on GitHub pull requests."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["requests>=2.28"]
+
+[project.scripts]
+minioj = "minioj.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["minioj*"]
