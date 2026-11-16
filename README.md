@@ -68,7 +68,7 @@ filename or line-number headers are shown. Whitespace and trailing newlines
 matter. If the expected file is missing,
 feedback marks comparison as unavailable and shows the raw stdout instead.
 Process exit status and stderr are reported independently of the comparison.
-Each case ends with `Passed!` or `Failed...` outside its details block. Passing
+Each case's heading includes `Passed` or `Failed` above its details block. Passing
 requires a zero exit status and matching expected output; missing expected output
 counts as a failure.
 

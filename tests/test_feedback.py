@@ -17,10 +17,10 @@ class FeedbackTests(unittest.TestCase):
             "## MiniOJ feedback - Example\n\n"
             "Made with :heart: by FTC Team FFFabulous 19726.\n\n"
             "### Compile\n\n"
-            "Status: 1\n\n"
-            "<details><summary>Details:</summary>\n\n"
-            "`stdout`:\n\n```\nout\n```\n\n"
-            "`stderr`: \n\n```\nerr\n```\n\n"
+            "<details><summary>Details</summary>\n\n"
+            "Exit status: `1`\n\n"
+            "File `stdout`:\n\n```\nout\n```\n\n"
+            "File `stderr`: \n\n```\nerr\n```\n\n"
             "</details>\n\n\n\n"
         ))
 
@@ -35,26 +35,29 @@ class FeedbackTests(unittest.TestCase):
         sections = construct_stage_feedback(result)
         self.assertEqual(sections[0][0], "Run")
         body = sections[0][1]
-        self.assertIn("**Case 0:**\n\nStatus: 0", body)
-        self.assertIn("**Case 1:**\n\nStatus: 2", body)
+        self.assertIn("#### Case 0 - Failed\n\n", body)
+        self.assertIn("#### Case 1 - Failed\n\n", body)
+        self.assertIn("Exit status: `0`", body)
+        self.assertIn("Exit status: `2`", body)
         self.assertIn("```diff\n-expected first\n+first\n", body)
         self.assertIn("```diff\n-expected second\n+second\n", body)
-        self.assertIn("`stderr`: \n\n```\nerror\n```", body)
+        self.assertIn("File `stderr`: \n\n```\nerror\n```", body)
         self.assertLess(body.index("first"), body.index("second"))
-        cases = body.split("**Case ")[1:]
+        cases = body.split("#### Case ")[1:]
         self.assertEqual(len(cases), 5)
         for case, verdict in zip(cases, (
-            "Failed...", "Failed...", "Passed!", "Failed...", "Failed...",
+            "Failed", "Failed", "Passed", "Failed", "Failed",
         )):
             with self.subTest(case=case.splitlines()[0]):
-                self.assertTrue(case.endswith(f"</details>\n\n{verdict}\n\n"))
+                self.assertEqual(case.splitlines()[0].split(" - ", 1)[1], verdict)
+                self.assertTrue(case.endswith("</details>\n\n"))
 
     def test_matching_outputs_including_empty_output_show_plain_stdout(self):
         for stdout in ("", "same\n", "same"):
             with self.subTest(stdout=stdout):
                 result = CommandResult(0, stdout, "", "case1.in", stdout)
                 body = construct_result_feedback(result)
-                self.assertIn(f"`stdout`:\n\n```\n{stdout}\n```", body)
+                self.assertIn(f"File `stdout`:\n\n```\n{stdout}\n```", body)
                 self.assertNotIn("```diff", body)
                 self.assertNotIn("No differences.", body)
                 self.assertIs(result.output_matches, True)

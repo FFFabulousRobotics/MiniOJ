@@ -41,13 +41,12 @@ class CliTests(unittest.TestCase):
         self.assertTrue(body.startswith("## MiniOJ feedback - Integration"))
         self.assertIn("### Once", body)
         self.assertIn("### Cases", body)
-        self.assertEqual(body.count("Status: 0"), 3)
+        self.assertEqual(body.count("Exit status: `0`"), 3)
         self.assertIn("```diff\n-expected\n+FIRST\n", body)
-        self.assertIn("**Case 1:**", body)
+        self.assertIn("#### Case 1 - Passed", body)
         self.assertIn("```\nSECOND\n\n```", body)
         self.assertNotIn("No differences.", body)
-        self.assertEqual(body.count("</details>\n\nPassed!\n\n"), 1)
-        self.assertEqual(body.count("</details>\n\nFailed...\n\n"), 1)
+        self.assertIn("#### Case 0 - Failed", body)
 
     def test_missing_root_emits_configuration_feedback(self):
         with redirect_stdout(StringIO()) as output:
