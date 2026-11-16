@@ -26,6 +26,12 @@ def run_stage(stage: Stage, directory: Path) -> StageResult:
     results = []
     if stage.cased:
         for case_file in find_case_files(directory):
+            expected_file = case_file.with_suffix(".out")
+            expected_stdout = (
+                expected_file.read_text(encoding="utf-8")
+                if expected_file.is_file()
+                else None
+            )
             with case_file.open(encoding="utf-8") as case_input:
                 process = subprocess.run(
                     command,
@@ -36,7 +42,11 @@ def run_stage(stage: Stage, directory: Path) -> StageResult:
                 )
             results.append(
                 CommandResult(
-                    process.returncode, process.stdout, process.stderr, case_file.name
+                    process.returncode,
+                    process.stdout,
+                    process.stderr,
+                    case_file.name,
+                    expected_stdout,
                 )
             )
     else:

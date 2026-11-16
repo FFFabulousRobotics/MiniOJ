@@ -36,6 +36,8 @@ class CliTests(unittest.TestCase):
         (directory / "conf.json").write_text(json.dumps(config), encoding="utf-8")
         (directory / "case2.in").write_text("second", encoding="utf-8")
         (directory / "case1.in").write_text("first", encoding="utf-8")
+        (directory / "case2.out").write_text("SECOND\n", encoding="utf-8")
+        (directory / "case1.out").write_text("expected\n", encoding="utf-8")
         response = requests.Response()
         response.status_code = 201
         post.return_value = response
@@ -47,7 +49,12 @@ class CliTests(unittest.TestCase):
         self.assertIn("### Once", body)
         self.assertIn("### Cases", body)
         self.assertEqual(body.count("Status: 0"), 3)
-        self.assertLess(body.index("FIRST"), body.index("SECOND"))
+        self.assertIn("```diff\n--- case1.out\n+++ stdout\n@@ -1 +1 @@", body)
+        self.assertIn("-expected\n+FIRST\n", body)
+        self.assertIn("**Case 1:**", body)
+        self.assertIn("```diff\nNo differences.\n```", body)
+        self.assertEqual(body.count("</details>\n\nPassed!\n\n"), 1)
+        self.assertEqual(body.count("</details>\n\nFailed...\n\n"), 1)
 
     @patch("minioj.cli.GitHubClient.send_comment")
     def test_missing_root_posts_configuration_feedback(self, send):

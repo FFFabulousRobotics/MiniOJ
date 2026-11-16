@@ -51,6 +51,13 @@ class CommandResult:
     stdout: str
     stderr: str
     case_name: str | None = None
+    expected_stdout: str | None = None
+
+    @property
+    def output_matches(self) -> bool | None:
+        if self.expected_stdout is None:
+            return None
+        return self.stdout == self.expected_stdout
 
 
 @dataclass(frozen=True)
