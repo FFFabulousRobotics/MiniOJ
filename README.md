@@ -6,35 +6,50 @@ a repository, PR number, or token.
 
 ## Install and run
 
-Python 3.10 or newer is required. Install the PyPI release:
+Python 3.10 or newer is required. Install using pip:
 
 ```sh
-python -m pip install minioj==0.3.0
+python -m pip install minioj==0.4.0
+```
+
+Basic usage:
+
+```sh
 minioj --config .minioj --comment '@minioj-bot run w1/ex1' --output feedback.md
 ```
 
-Omit `--output` to write the Markdown to stdout instead. `-o` is the short form.
-The output file is UTF-8; its parent directory must already exist. The same
-option saves configuration and execution error feedback. A file write error is
-reported on stderr and returns exit status 1.
+- `--config`: Config root directory.
+- `--output`: Feedback output file. Omit to write the Markdown to stdout instead.
+- `--comment`: The comment that triggered the OJ. Used to parse exercise to run.
+Must contain `run wi/exj` (case-insensitive), where `i` and `j` are numbers.
 
-`python -m minioj` and `python main.py` accept the same arguments. `--config`
-defaults to `.minioj/`. For development, install this checkout with
-`python -m pip install -e .`.
+A typical workflow is to publish feedback using issues or PRs, for example with
+a separate GitHub Actions job running:
 
-Exit status 0 means the run produced feedback, including feedback about failed
-cases or missing/invalid exercise configuration. An invalid triggering comment
-or an execution infrastructure error produces error Markdown and exit status 1.
-Argument syntax errors return status 2. Case verdicts appear in the Markdown;
-the CLI status is not an aggregate pass/fail result.
+```sh
+gh pr comment "$PR_NUMBER" --body-file feedback.md
+```
 
-MiniOJ does not accept `--repo`, `--pull-request`, or `--token`. Publishing feedback
-belongs to the caller, for example a separate GitHub Actions job running
-`gh pr comment "$PR_NUMBER" --body-file feedback.md`.
+## Usage
+
+```
+$ minioj -h
+
+usage: minioj [-h] [-c CONFIG] [-o OUTPUT] -x COMMENT
+
+Run an exercise and write feedback Markdown to stdout.
+
+options:
+  -h, --help            show this help message and exit
+  -c, --config CONFIG   The config path. (default: .minioj/)
+  -o, --output OUTPUT   Write feedback Markdown to OUTPUT instead of stdout.
+  -x, --comment COMMENT
+                        The PR comment body that triggers MiniOJ.
+```
 
 ## Exercise configuration
 
-Store each exercise at `.minioj/w<week>/ex<exercise>/conf.json`:
+Store each exercise config at `.minioj/w<week>/ex<exercise>/conf.json`:
 
 ```json
 {
@@ -47,27 +62,27 @@ Store each exercise at `.minioj/w<week>/ex<exercise>/conf.json`:
 ```
 
 An exercise name defaults to `w<week>/ex<exercise>`, and stage names default to
-`Stage <index>` starting at zero. As in the original format, stage entries without
-a string `command` are skipped. Only the JSON boolean `true` enables `cased`.
+`Stage <index>` starting at zero. Stage entries without
+a string `command` are skipped.
 
-Commands support quoted arguments and run directly without a shell. Pipes,
-redirection, and shell variable expansion require explicitly invoking a shell
-(for example, `sh -c 'echo hello > output.txt'`). Run MiniOJ from the submission
-directory: all stages inherit that working directory and run in config order,
+All stages inherit MiniOJ's working directory and run in config order,
 including stages after a nonzero exit status.
 
 A stage normally runs once with closed standard input. A `cased` stage runs once
 for each `case<number>.in` file in the exercise directory, in numeric order. Each
 file supplies stdin, and its matching `case<number>.out` supplies expected stdout
-(for example, `case2.in` pairs with `case2.out`). Feedback numbers the cases from
-zero and shows matching stdout as plain text. When output differs, the `stdout`
-block shows the complete output with diff highlighting: `-` lines are missing or
-replaced expected output, `+` lines are extra or replacement actual output, and
+(for example, `case2.in` pairs with `case2.out`). Cases are numbered starting from
+zero.
+
+In the feedback, when output differs, the `stdout` block shows the complete output.
+If the stage is `cased`, `stdout` has diff highlighting: `-` lines means missing
+expected output, `+` lines are excessive actual output, and
 unchanged lines appear once with a space prefix. No lines are omitted, and no
 filename or line-number headers are shown. Whitespace and trailing newlines
-matter. If the expected file is missing,
-feedback marks comparison as unavailable and shows the raw stdout instead.
-Process exit status and stderr are reported independently of the comparison.
+matter. If the expected file is missing, feedback marks comparison as unavailable
+and shows the raw stdout instead.
+
+Process exit status and `stderr` are reported independently of the comparison.
 Each case's heading includes `Passed` or `Failed` above its details block. Passing
 requires a zero exit status and matching expected output; missing expected output
 counts as a failure.
@@ -91,6 +106,8 @@ The data models are immutable dataclasses. Config parsing produces `Exercise`
 and `Stage` objects; execution produces `StageResult` objects containing
 `CommandResult` objects. Feedback formatting consumes those results without
 performing network or process I/O.
+
+### Python API
 
 The Python API also returns Markdown:
 
